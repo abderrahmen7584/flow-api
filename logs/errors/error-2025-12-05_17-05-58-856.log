@@ -1,0 +1,1 @@
+00:00:28.274956 ERROR [COM]: aRC=VBOX_E_INVALID_OBJECT_STATE (0x80bb0007) aIID={d7b98d2b-30e8-447e-99cb-e31becae6ae4} aComponent={ProgressWrap} aText={Operation cannot be canceled}, preserve=false aResultDetail=0
