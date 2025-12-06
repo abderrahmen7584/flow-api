@@ -8,7 +8,7 @@ import java.util.concurrent.Flow.*;
 
 public class LogSubscriber implements Subscriber<String> {
 
-    private static final int BATCH_SIZE = 20; // how many log lines to buffer before requesting more
+    private static final int BATCH_SIZE = 50; // how many log lines to buffer before requesting more
 
     private final Path folder;
     private Subscription subscription;

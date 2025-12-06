@@ -3,7 +3,7 @@ import java.util.concurrent.Flow;
 public class Demo {
     public static void main(String[] args) {
 
-        Flow.Publisher<String> publisher = new LogPublisher("C://Users/daous/VirtualBox VMs/abdou/Logs/");
+        Flow.Publisher<String> publisher = new LogPublisher("D:/Riot Games/League of Legends/Logs/LeagueClient Logs");
 
         ErrorProcessor processor = new ErrorProcessor();
 
