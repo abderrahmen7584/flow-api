@@ -3,6 +3,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.Flow.*;
 
 public class LogSubscriber implements Subscriber<String> {
@@ -12,6 +13,9 @@ public class LogSubscriber implements Subscriber<String> {
     private final Path folder;
     private Subscription subscription;
     private final List<String> buffer = new ArrayList<>(BATCH_SIZE);
+
+    // Executor for async flush
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     public LogSubscriber(String folderPath) {
         this.folder = Paths.get(folderPath);
@@ -29,41 +33,57 @@ public class LogSubscriber implements Subscriber<String> {
     @Override
     public void onSubscribe(Subscription subscription) {
         this.subscription = subscription;
-
-        // 🔥 Request first batch
-        subscription.request(BATCH_SIZE);
+        subscription.request(BATCH_SIZE); // request first batch
         System.out.println("Subscriber: Requested first " + BATCH_SIZE + " items");
     }
 
     @Override
     public void onNext(String item) {
-        buffer.add(item);
+        synchronized (buffer) {
+            buffer.add(item);
 
-        // When buffer is full → flush to file
-        if (buffer.size() >= BATCH_SIZE) {
-            flushBuffer();
-            subscription.request(BATCH_SIZE); // request next batch
-            System.out.println("Subscriber: Requested next " + BATCH_SIZE + " items");
+            if (buffer.size() >= BATCH_SIZE) {
+                List<String> itemsToFlush = new ArrayList<>(buffer);
+                buffer.clear(); // clear immediately to prevent memory spike
+
+                // Flush asynchronously
+                executor.submit(() -> flushBuffer(itemsToFlush));
+
+                subscription.request(BATCH_SIZE); // request next batch
+                System.out.println("Subscriber: Requested next " + BATCH_SIZE + " items");
+            }
         }
     }
 
     @Override
     public void onError(Throwable throwable) {
-        System.out.println("Subscriber error: " + throwable.getMessage());
-        flushBuffer(); // flush remaining data to avoid loss
+        System.err.println("Subscriber error: " + throwable.getMessage());
+        flushBufferAsync();
+        executor.shutdown();
     }
 
     @Override
     public void onComplete() {
         System.out.println("Subscriber: Completed");
-        flushBuffer(); // flush last items
+        flushBufferAsync();
+        executor.shutdown();
     }
 
     // ======================
-    // 🔥 Flush buffer to disk
+    // Async flush helper
     // ======================
-    private void flushBuffer() {
-        if (buffer.isEmpty()) return;
+    private void flushBufferAsync() {
+        List<String> itemsToFlush;
+        synchronized (buffer) {
+            if (buffer.isEmpty()) return;
+            itemsToFlush = new ArrayList<>(buffer);
+            buffer.clear();
+        }
+        executor.submit(() -> flushBuffer(itemsToFlush));
+    }
+
+    private void flushBuffer(List<String> items) {
+        if (items.isEmpty()) return;
 
         try {
             String timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss-SSS")
@@ -73,18 +93,16 @@ public class LogSubscriber implements Subscriber<String> {
 
             Files.write(
                     outputFile,
-                    buffer,
+                    items,
                     StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE
             );
 
-            System.out.println("Flushed " + buffer.size() +
+            System.out.println("Flushed " + items.size() +
                     " items → " + outputFile.getFileName());
 
-            buffer.clear(); // reset buffer
-
         } catch (IOException e) {
-            subscription.cancel();
+            if (subscription != null) subscription.cancel();
             System.err.println("Failed to write batch: " + e.getMessage());
         }
     }
